@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SUPERVECTAR VLC TV</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      padding: 20px;
+      max-width: 1000px;
+      margin: auto;
+      background: #0b0b0b;
+      color: #eee;
+    }
+
+    h1 {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      text-align: center;
+      margin-bottom: 20px;
+      color: #FFD700;
+      flex-wrap: wrap;
+      font-size: clamp(1.4rem, 2.5vw, 1.8rem);
+    }
+
+    h1 .main-logo { height: 1em; width: auto; }
+    h2 { font-size: 1.3rem; margin-top: 2rem; margin-bottom: 0.8rem; color: #FFD700; }
+
+    .search-box { text-align: center; margin-bottom: 10px; }
+    .search-box input {
+      width: 90%; max-width: 500px; padding: 10px;
+      border-radius: 8px; border: none; outline: none;
+      background: #222; color: #eee; font-size: 1rem;
+    }
+
+    .category-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .category-buttons button {
+      background: #222;
+      color: #FFD700;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 8px 15px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-weight: bold;
+    }
+
+    .category-buttons button:hover {
+      background: #FFD700;
+      color: #000;
+    }
+
+    .category-buttons button.active {
+      background: #FFD700;
+      color: #000;
+      border-color: #FFD700;
+    }
+
+    .category-grid { display: flex; flex-direction: column; gap: 10px; }
+
+    .card {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 10px;
+      transition: transform 0.2s;
+    }
+
+    .card:hover {
+      transform: scale(1.02);
+      box-shadow: 0 0 10px #ffd70044;
+    }
+
+    .card img {
+      width: 60px;
+      height: 60px;
+      object-fit: contain;
+      margin-right: 10px;
+      background: #fff;
+      padding: 5px;
+      border-radius: 5px;
+    }
+
+    .card strong { color: #FFD700; flex: 1; font-size: 1rem; }
+
+    .actions { display: flex; gap: 5px; flex-wrap: wrap; }
+    .actions button {
+      padding: 5px 8px; border: none; border-radius: 6px;
+      cursor: pointer; font-size: 0.8rem;
+    }
+    .btn-android { background: #4CAF50; color: #fff; }
+    .btn-ios { background: #2196F3; color: #fff; }
+    .btn-copy { background: #FFD700; color: #000; }
+
+    .no-results { text-align: center; color: #888; margin-top: 20px; }
+
+    #toast {
+      visibility: hidden;
+      min-width: 180px;
+      background-color: #333;
+      color: #fff;
+      text-align: center;
+      border-radius: 10px;
+      padding: 10px;
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      transition: opacity 0.3s ease, bottom 0.3s ease;
+      opacity: 0;
+    }
+
+    #toast.show {
+      visibility: visible;
+      opacity: 1;
+      bottom: 50px;
+    }
+
+    #notice a { color: #FFD700; text-decoration: underline; }
+    #notice a:hover { color: #FFA500; }
+  </style>
+</head>
+<body>
+  <h1>
+    <img src="https://i.ibb.co/CKVW2GnC/vlc.png" alt="Logo" class="main-logo">
+    SUPERVECTAR VLC TV
+  </h1>
+
+  <div id="notice">
+    ⚠️ Para reproducir los canales es necesario tener instalado el reproductor VLC:
+    <a href="https://play.google.com/store/apps/details?id=org.videolan.vlc&hl=es" target="_blank">Descargar VLC Android</a>,
+    <a href="https://apps.apple.com/es/app/vlc-media-player/id650377962" target="_blank">Descargar VLC iOS</a>,
+    <a href="https://images.videolan.org/vlc/download-windows.html" target="_blank">Descargar VLC Windows</a>.	
+  </div>
+
+  <div class="search-box">
+    <input type="text" id="search" placeholder="🔍 Buscar canal..." />
+  </div>
+
+  <div id="category-buttons" class="category-buttons"></div>
+  <div id="container"></div>
+  <div class="no-results" style="display:none;">No se encontraron canales 😕</div>
+  <div id="toast"></div>
+
+  <script>
+    const M3U_URL = "https://raw.githubusercontent.com/supervectar-coder/listaaVLCtv/refs/heads/main/lista%20vlc.m3u";
+
+    async function loadM3U() {
+      try {
+        const res = await fetch(M3U_URL);
+        const text = await res.text();
+        parseM3U(text);
+      } catch (err) {
+        console.error("Error al cargar la lista M3U:", err);
+        document.getElementById("container").innerHTML = "<p style='color:red'>❌ Error al cargar la lista M3U.</p>";
+      }
+    }
+
+    function parseM3U(text) {
+      const lines = text.split("\n").filter(l => l.trim() !== "");
+      const canales = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.startsWith("#EXTINF")) {
+          const info = line;
+
+          const logoMatch = info.match(/tvg-logo="([^"]*)"/i);
+          const groupMatch = info.match(/group-title="([^"]*)"/i);
+
+          let name = "Canal sin nombre";
+          const commaIndex = info.lastIndexOf(",");
+          if (commaIndex !== -1 && commaIndex < info.length - 1) {
+            name = info.substring(commaIndex + 1).trim();
+          }
+
+          const url = lines[i + 1] || "";
+
+          canales.push({
+            nombre: name,
+            logo: logoMatch ? logoMatch[1] : "",
+            grupo: groupMatch ? groupMatch[1] : "Sin categoría",
+            url
+          });
+        }
+      }
+
+      renderCategorias(canales);
+    }
+
+    function renderCategorias(canales) {
+      const categoriasMap = {};
+      canales.forEach(c => {
+        if (!categoriasMap[c.grupo]) categoriasMap[c.grupo] = [];
+        categoriasMap[c.grupo].push(c);
+      });
+
+      const container = document.getElementById('container');
+      const categoryButtonsContainer = document.getElementById('category-buttons');
+      container.innerHTML = "";
+      categoryButtonsContainer.innerHTML = "";
+
+      const grupos = Object.keys(categoriasMap);
+
+      const allButton = document.createElement('button');
+      allButton.textContent = "Todos";
+      allButton.classList.add('active');
+      categoryButtonsContainer.appendChild(allButton);
+      allButton.addEventListener('click', () => {
+        document.querySelectorAll('h2, .category-grid').forEach(el => el.style.display = '');
+        document.querySelectorAll('.category-buttons button').forEach(b => b.classList.remove('active'));
+        allButton.classList.add('active');
+      });
+
+      grupos.forEach((grupo, index) => {
+        const btn = document.createElement('button');
+        btn.textContent = grupo;
+        btn.setAttribute('data-category', index);
+        categoryButtonsContainer.appendChild(btn);
+
+        const h2 = document.createElement('h2');
+        h2.textContent = grupo;
+        container.appendChild(h2);
+
+        const grid = document.createElement('div');
+        grid.className = 'category-grid';
+        container.appendChild(grid);
+
+        categoriasMap[grupo].forEach(ch => {
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.setAttribute('data-nombre', ch.nombre.toLowerCase());
+
+          const img = document.createElement('img');
+          img.src = ch.logo || "https://upload.wikimedia.org/wikipedia/commons/a/ac/No_image_available.svg";
+          img.alt = `logo de ${ch.nombre}`;
+          img.onerror = () => {
+            img.src = "https://upload.wikimedia.org/wikipedia/commons/a/ac/No_image_available.svg";
+          };
+
+          const strong = document.createElement('strong');
+          strong.textContent = ch.nombre;
+
+          const actions = document.createElement('div');
+          actions.className = 'actions';
+          actions.innerHTML = `
+            <button class="btn-android">📱 Android</button>
+            <button class="btn-ios">🍎 iOS</button>
+            <button class="btn-copy">📋 Copiar enlace</button>
+          `;
+          actions.querySelector('.btn-android').addEventListener('click', () => {
+            if (isAndroid()) openWithAndroidIntent(ch.url);
+            else alert('Solo para Android');
+          });
+          actions.querySelector('.btn-ios').addEventListener('click', () => {
+            if (isIOS()) openWithiOSVLC(ch.url);
+            else alert('Solo para iPhone/iPad');
+          });
+          actions.querySelector('.btn-copy').addEventListener('click', () => copyToClipboard(ch.url));
+
+          card.appendChild(img);
+          card.appendChild(strong);
+          card.appendChild(actions);
+
+          grid.appendChild(card);
+        });
+
+        btn.addEventListener('click', () => filterByCategory(index));
+      });
+
+      initSearch();
+    }
+
+    function filterByCategory(categoryIndex) {
+      const allCategories = document.querySelectorAll('h2, .category-grid');
+      let count = 0;
+      allCategories.forEach(el => {
+        if (el.tagName === 'H2') {
+          const grid = el.nextElementSibling;
+          if (count === Number(categoryIndex)) {
+            el.style.display = '';
+            grid.style.display = '';
+          } else {
+            el.style.display = 'none';
+            grid.style.display = 'none';
+          }
+          count++;
+        }
+      });
+      document.querySelectorAll('.category-buttons button').forEach(b => b.classList.remove('active'));
+      const activeButton = document.querySelector(`.category-buttons button[data-category="${categoryIndex}"]`);
+      if (activeButton) activeButton.classList.add('active');
+    }
+
+    function isAndroid() { return /Android/i.test(navigator.userAgent); }
+    function isIOS() { return /iPhone|iPad|iPod/i.test(navigator.userAgent); }
+
+    function openWithAndroidIntent(url) {
+      const fallback = encodeURIComponent(url);
+      const urlNoScheme = url.replace(/^https?:\/\//i, '');
+      const intentUri = 'intent://' + urlNoScheme +
+        '#Intent;scheme=http;package=org.videolan.vlc;S.browser_fallback_url=' + fallback + ';end';
+      window.location.href = intentUri;
+    }
+
+    function openWithiOSVLC(url) {
+      const uri = 'vlc-x-callback://x-callback-url/stream?url=' + encodeURIComponent(url);
+      window.location.href = uri;
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text)
+        .then(() => showToast("✅ Enlace copiado"))
+        .catch(() => alert("No se pudo copiar el enlace 😕"));
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.className = "show";
+      setTimeout(() => {
+        toast.className = toast.className.replace("show", "");
+      }, 2000);
+    }
+
+    function initSearch() {
+      const searchInput = document.getElementById('search');
+      const noResults = document.querySelector('.no-results');
+      searchInput.addEventListener('input', () => {
+        const query = searchInput.value.toLowerCase();
+        const cards = document.querySelectorAll('.card');
+        let visible = 0;
+        cards.forEach(card => {
+          const name = card.getAttribute('data-nombre');
+          if (name.includes(query)) {
+            card.style.display = 'flex';
+            visible++;
+          } else {
+            card.style.display = 'none';
+          }
+        });
+        noResults.style.display = visible === 0 ? 'block' : 'none';
+      });
+    }
+
+    loadM3U();
+  </script>
+</body>
+</html>
